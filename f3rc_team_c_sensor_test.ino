@@ -1,6 +1,19 @@
-#include<Wire.h>
-
+#include <Wire.h>
+#include <MadgwickAHRS.h>
 #include <VL53L0X.h>
+
+Madgwick MadgwickFilter;
+#define MadgwickHz 100 //周波数。１秒間に何回データを読み込むかの値
+
+#include <Ticker.h>
+
+void BMX055_All();
+Ticker madgwickticker(BMX055_All, 0, 1);
+
+void VL53L0X_Get();
+Ticker VL53L0Xticker(VL53L0X_Get, 0, 1);
+
+
 
 
 // BMX055 加速度センサのI2Cアドレス  
@@ -12,15 +25,15 @@
 
 
 // センサーの値を保存するグローバル変数
-float xAccl = 0.00;
-float yAccl = 0.00;
-float zAccl = 0.00;
-float xGyro = 0.00;
-float yGyro = 0.00;
-float zGyro = 0.00;
-int   xMag  = 0;
-int   yMag  = 0;
-int   zMag  = 0;
+float ax = 0.00;
+float ay = 0.00;
+float az = 0.00;
+float gx = 0.00;
+float gy = 0.00;
+float gz = 0.00;
+float mx = 0.00;
+float my = 0.00;
+float mz = 0.00;
 float pitch = 0.00;
 float roll = 0.00;
 float yaw = 0.00;
@@ -42,11 +55,6 @@ float yaw = 0.00;
  */
 const int GPIO_MASK_ARRAY[SENSOR_NUM] = {SENSOR0, SENSOR1, SENSOR2, SENSOR3};
 VL53L0X gSensor[SENSOR_NUM]; // 使用するセンサークラス配列
-
-
-//何秒ごとにプログラムを動かすか(ms)
-unsigned long start_time, end_time;
-int program_period = 100;
 
 
 
@@ -121,10 +129,13 @@ void BMX055_Init()
   Wire.write(16);  // No. of Repetitions for Z-Axis = 15
   Wire.endTransmission();
 }
-//=====================================================================================//
-void BMX055_Accl()
+
+
+void BMX055_All() //BMX055から全データとMadgwickフィルタの結果を取得する
 {
-  unsigned int data[6];
+  unsigned int data[8];
+
+  //加速度データを取得する
   for (int i = 0; i < 6; i++)
   {
     Wire.beginTransmission(Addr_Accl);
@@ -132,52 +143,47 @@ void BMX055_Accl()
     Wire.endTransmission();
     Wire.requestFrom(Addr_Accl, 1);// Request 1 byte of data
     // Read 6 bytes of data
-    // xAccl lsb, xAccl msb, yAccl lsb, yAccl msb, zAccl lsb, zAccl msb
+    // ax lsb, ax msb, ay lsb, ay msb, az lsb, az msb
     if (Wire.available() == 1)
       data[i] = Wire.read();
   }
   // Convert the data to 12-bits
-  xAccl = ((data[1] * 256) + (data[0] & 0xF0)) / 16;
-  if (xAccl > 2047)  xAccl -= 4096;
-  yAccl = ((data[3] * 256) + (data[2] & 0xF0)) / 16;
-  if (yAccl > 2047)  yAccl -= 4096;
-  zAccl = ((data[5] * 256) + (data[4] & 0xF0)) / 16;
-  if (zAccl > 2047)  zAccl -= 4096;
-  xAccl = xAccl * 0.00098; // range = +/-2g
-  yAccl = yAccl * 0.00098; // range = +/-2g
-  zAccl = zAccl * 0.00098; // range = +/-2g
-}
-//=====================================================================================//
-void BMX055_Gyro()
-{
-  unsigned int data[6];
+  ax = ((data[1] * 256) + (data[0] & 0xF0)) / 16;
+  if (ax > 2047)  ax -= 4096;
+  ay = ((data[3] * 256) + (data[2] & 0xF0)) / 16;
+  if (ay > 2047)  ay -= 4096;
+  az = ((data[5] * 256) + (data[4] & 0xF0)) / 16;
+  if (az > 2047)  az -= 4096;
+  ax = ax * 0.0098; // range = +/-2g
+  ay = ay * 0.0098; // range = +/-2g
+  az = az * 0.0098; // range = +/-2g
+  // 上記の乗数は秋月のマニュアル通りですが、誤植とのことです。
+  // 正しくは、mg換算で0.98、G換算で0.00098
+  // とのことです。
+
+  //ジャイロデータを取得する
   for (int i = 0; i < 6; i++)
   {
     Wire.beginTransmission(Addr_Gyro);
     Wire.write((2 + i));    // Select data register
     Wire.endTransmission();
     Wire.requestFrom(Addr_Gyro, 1);    // Request 1 byte of data
-    // Read 6 bytes of data
-    // xGyro lsb, xGyro msb, yGyro lsb, yGyro msb, zGyro lsb, zGyro msb
     if (Wire.available() == 1)
       data[i] = Wire.read();
   }
   // Convert the data
-  xGyro = (data[1] * 256) + data[0];
-  if (xGyro > 32767)  xGyro -= 65536;
-  yGyro = (data[3] * 256) + data[2];
-  if (yGyro > 32767)  yGyro -= 65536;
-  zGyro = (data[5] * 256) + data[4];
-  if (zGyro > 32767)  zGyro -= 65536;
+  gx = (data[1] * 256) + data[0];
+  if (gx > 32767)  gx -= 65536;
+  gy = (data[3] * 256) + data[2];
+  if (gy > 32767)  gy -= 65536;
+  gz = (data[5] * 256) + data[4];
+  if (gz > 32767)  gz -= 65536;
 
-  xGyro = xGyro * 0.0038; //  Full scale = +/- 125 degree/s
-  yGyro = yGyro * 0.0038; //  Full scale = +/- 125 degree/s
-  zGyro = zGyro * 0.0038; //  Full scale = +/- 125 degree/s
-}
-//=====================================================================================//
-void BMX055_Mag()
-{
-  unsigned int data[8];
+  gx = gx * 0.0038; //  Full scale = +/- 125 degree/s
+  gy = gy * 0.0038; //  Full scale = +/- 125 degree/s
+  gz = gz * 0.0038; //  Full scale = +/- 125 degree/s
+
+  //コンパスデータを取得する
   for (int i = 0; i < 8; i++)
   {
     Wire.beginTransmission(Addr_Mag);
@@ -185,36 +191,31 @@ void BMX055_Mag()
     Wire.endTransmission();
     Wire.requestFrom(Addr_Mag, 1);    // Request 1 byte of data
     // Read 6 bytes of data
-    // xMag lsb, xMag msb, yMag lsb, yMag msb, zMag lsb, zMag msb
+    // mx lsb, mx msb, my lsb, my msb, mz lsb, mz msb
     if (Wire.available() == 1)
       data[i] = Wire.read();
   }
-// Convert the data
-  xMag = ((data[1] <<5) | (data[0]>>3));
-  if (xMag > 4095)  xMag -= 8192;
-  yMag = ((data[3] <<5) | (data[2]>>3));
-  if (yMag > 4095)  yMag -= 8192;
-  zMag = ((data[5] <<7) | (data[4]>>1));
-  if (zMag > 16383)  zMag -= 32768;
+  // Convert the data
+  mx = ((data[1] << 5) | (data[0] >> 3));
+  if (mx > 4095)  mx -= 8192;
+  my = ((data[3] << 5) | (data[2] >> 3));
+  if (my > 4095)  my -= 8192;
+  mz = ((data[5] << 7) | (data[4] >> 1));
+  if (mz > 16383)  mz -= 32768;
+
+  MadgwickFilter.update(gx, gy, gz, ax, ay, az, mx, my, mz);
+  float pitch = MadgwickFilter.getPitch();
+  float roll  = MadgwickFilter.getRoll();
+  float yaw   = MadgwickFilter.getYaw();
+  Serial.print(pitch);
+  Serial.print(",");
+  Serial.print(roll);
+  Serial.print(",");
+  Serial.print(yaw);
+  Serial.println("");
 }
 
-
-
-
-
-
-void setup()
-{
-  // Wire(Arduino-I2C)の初期化
-  Wire.begin();
-  // デバッグ用シリアル通信は115200bps
-  Serial.begin(115200);
-
-
-  //BMX055 初期化
-  BMX055_Init();
-
-
+void VL53L0X_Init(){
   //VL53L0X 初期化
   // まず全てのGPIOをLOW
   for (int i = 0; i < SENSOR_NUM; i++)
@@ -242,49 +243,39 @@ void setup()
   }
 }
 
-
-void loop()
-{
-  start_time = millis();
-  //BMX055 加速度の読み取り
-  BMX055_Accl();
-  Serial.print("Accl= ");
-  Serial.print(xAccl);
-  Serial.print(",");
-  Serial.print(yAccl);
-  Serial.print(",");
-  Serial.print(zAccl);
-  Serial.print(" "); 
-  
-  //BMX055 ジャイロの読み取り
-  BMX055_Gyro();
-  Serial.print("Gyro= ");
-  Serial.print(xGyro);
-  Serial.print(",");
-  Serial.print(yGyro);
-  Serial.print(",");
-  Serial.print(zGyro);
-  Serial.print(" "); 
-  
-  //BMX055 磁気の読み取り
-  BMX055_Mag();
-  Serial.print("Mag= ");
-  Serial.print(xMag);
-  Serial.print(",");
-  Serial.print(yMag);
-  Serial.print(",");
-  Serial.print(zMag);
-  Serial.print(" ");
-
+void VL53L0X_Get(){
   //VL53L0X 距離の読み取り
   for (int i = 0; i < SENSOR_NUM; i++) {
     Serial.print(gSensor[i].readRangeSingleMillimeters());
     if (gSensor[i].timeoutOccurred()) { Serial.print(" TIMEOUT"); }
 
     Serial.println();
-
-  
-  end_time = millis();
-  delay(program_period - (start_time - end_time));
   }
+}
+
+
+void setup()
+{
+  MadgwickFilter.begin(MadgwickHz);
+
+  // Wire(Arduino-I2C)の初期化
+  Wire.begin();
+  // デバッグ用シリアル通信は115200bps
+  Serial.begin(115200);
+
+
+  //BMX055 初期化
+  BMX055_Init();
+
+  VL53L0X_Init();
+
+  VL53L0Xticker.start();
+  madgwickticker.start();
+}
+
+
+void loop()
+{
+  VL53L0Xticker.update();
+  madgwickticker.update();
 }
