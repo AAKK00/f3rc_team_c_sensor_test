@@ -21,6 +21,9 @@ float zGyro = 0.00;
 int   xMag  = 0;
 int   yMag  = 0;
 int   zMag  = 0;
+float pitch = 0.00;
+float roll = 0.00;
+float yaw = 0.00;
 
 
 // 使用するセンサーの数
