@@ -6,13 +6,14 @@ Madgwick MadgwickFilter;
 #define MadgwickHz 100 //周波数。１秒間に何回データを読み込むかの値
 
 #include <Ticker.h>
-
+//tickerの書き方のメモですが括弧内で関数、何秒でそれを実行するか、何回繰り返すかを宣言してください
+//以下が基本の形です
+//Ticker hoge(hogehoge, 0) 関数hogehogeを0usで実行する
 void BMX055_All();
-Ticker madgwickticker(BMX055_All, 0, 1);
+Ticker madgwickticker(BMX055_All, 0);
 
 void VL53L0X_Get();
-Ticker VL53L0Xticker(VL53L0X_Get, 0, 1);
-
+Ticker VL53L0Xticker(VL53L0X_Get, 0); 
 
 
 
@@ -154,12 +155,10 @@ void BMX055_All() //BMX055から全データとMadgwickフィルタの結果を�
   if (ay > 2047)  ay -= 4096;
   az = ((data[5] * 256) + (data[4] & 0xF0)) / 16;
   if (az > 2047)  az -= 4096;
-  ax = ax * 0.0098; // range = +/-2g
-  ay = ay * 0.0098; // range = +/-2g
-  az = az * 0.0098; // range = +/-2g
-  // 上記の乗数は秋月のマニュアル通りですが、誤植とのことです。
-  // 正しくは、mg換算で0.98、G換算で0.00098
-  // とのことです。
+  ax = ax * 0.00098; // range = +/-2g
+  ay = ay * 0.00098; // range = +/-2g
+  az = az * 0.00098; // range = +/-2g
+
 
   //ジャイロデータを取得する
   for (int i = 0; i < 6; i++)
@@ -264,9 +263,10 @@ void setup()
   Serial.begin(115200);
 
 
-  //BMX055 初期化
+  //BMX055を初期化
   BMX055_Init();
 
+  //VL53L0Xを初期化
   VL53L0X_Init();
 
   VL53L0Xticker.start();
