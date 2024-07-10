@@ -32,9 +32,9 @@ float az = 0.00;
 float gx = 0.00;
 float gy = 0.00;
 float gz = 0.00;
-float mx = 0.00;
-float my = 0.00;
-float mz = 0.00;
+int mx = 0.00;
+int my = 0.00;
+int mz = 0.00;
 float pitch = 0.00;
 float roll = 0.00;
 float yaw = 0.00;
@@ -51,170 +51,55 @@ float yaw = 0.00;
 
 #define ADDRESS_DEFAULT 0b0101001 // 0x29
 #define ADDRESS_00 (ADDRESS_DEFAULT + 2)
-/**
- * 各センサのXSHUTへ接続されているGPIOの配列
- */
+/*
+各センサのXSHUTへ接続されているGPIOの配列
+*/
 const int GPIO_MASK_ARRAY[SENSOR_NUM] = {SENSOR0, SENSOR1, SENSOR2, SENSOR3};
 VL53L0X gSensor[SENSOR_NUM]; // 使用するセンサークラス配列
 
 
 
-void BMX055_Init()
-{
-  //------------------------------------------------------------//
-  Wire.beginTransmission(Addr_Accl);
-  Wire.write(0x0F); // Select PMU_Range register
-  Wire.write(0x03);   // Range = +/- 2g
-  Wire.endTransmission();
-  delay(100);
- //------------------------------------------------------------//
-  Wire.beginTransmission(Addr_Accl);
-  Wire.write(0x10);  // Select PMU_BW register
-  Wire.write(0x08);  // Bandwidth = 7.81 Hz
-  Wire.endTransmission();
-  delay(100);
-  //------------------------------------------------------------//
-  Wire.beginTransmission(Addr_Accl);
-  Wire.write(0x11);  // Select PMU_LPW register
-  Wire.write(0x00);  // Normal mode, Sleep duration = 0.5ms
-  Wire.endTransmission();
-  delay(100);
- //------------------------------------------------------------//
-  Wire.beginTransmission(Addr_Gyro);
-  Wire.write(0x0F);  // Select Range register
-  Wire.write(0x04);  // Full scale = +/- 125 degree/s
-  Wire.endTransmission();
-  delay(100);
- //------------------------------------------------------------//
-  Wire.beginTransmission(Addr_Gyro);
-  Wire.write(0x10);  // Select Bandwidth register
-  Wire.write(0x07);  // ODR = 100 Hz
-  Wire.endTransmission();
-  delay(100);
- //------------------------------------------------------------//
-  Wire.beginTransmission(Addr_Gyro);
-  Wire.write(0x11);  // Select LPM1 register
-  Wire.write(0x00);  // Normal mode, Sleep duration = 2ms
-  Wire.endTransmission();
-  delay(100);
- //------------------------------------------------------------//
-  Wire.beginTransmission(Addr_Mag);
-  Wire.write(0x4B);  // Select Mag register
-  Wire.write(0x83);  // Soft reset
-  Wire.endTransmission();
-  delay(100);
-  //------------------------------------------------------------//
-  Wire.beginTransmission(Addr_Mag);
-  Wire.write(0x4B);  // Select Mag register
-  Wire.write(0x01);  // Soft reset
-  Wire.endTransmission();
-  delay(100);
-  //------------------------------------------------------------//
-  Wire.beginTransmission(Addr_Mag);
-  Wire.write(0x4C);  // Select Mag register
-  Wire.write(0x00);  // Normal Mode, ODR = 10 Hz
-  Wire.endTransmission();
- //------------------------------------------------------------//
-  Wire.beginTransmission(Addr_Mag);
-  Wire.write(0x4E);  // Select Mag register
-  Wire.write(0x84);  // X, Y, Z-Axis enabled
-  Wire.endTransmission();
- //------------------------------------------------------------//
-  Wire.beginTransmission(Addr_Mag);
-  Wire.write(0x51);  // Select Mag register
-  Wire.write(0x04);  // No. of Repetitions for X-Y Axis = 9
-  Wire.endTransmission();
- //------------------------------------------------------------//
-  Wire.beginTransmission(Addr_Mag);
-  Wire.write(0x52);  // Select Mag register
-  Wire.write(16);  // No. of Repetitions for Z-Axis = 15
-  Wire.endTransmission();
+bool BMX055_Init() {
+  InitAccel();
+  InitGyro();
+  InitMag();
+}
+
+bool InitAccel() {
+  WriteByte(Addr_Accl, 0x0F, 0x03); // PMU_Range register, Range = +/- 2g
+  WriteByte(Addr_Accl, 0x10, 0x08); // PMU_BW register, Bandwidth = 7.81 Hz
+  WriteByte(Addr_Accl, 0x11, 0x00); // PMU_LPW register, Normal mode
+}
+
+bool InitGyro() {
+  WriteByte(Addr_Gyro, 0x0F, 0x04); // Range register, Full scale = +/- 125 degree/s
+  WriteByte(Addr_Gyro, 0x10, 0x07); // Bandwidth register, ODR = 100 Hz
+  WriteByte(Addr_Gyro, 0x11, 0x00); // LPM1 register, Normal mode
+}
+
+bool InitMag() {
+  WriteByte(Addr_Mag, 0x4B, 0x83); // Soft reset
+  WriteByte(Addr_Mag, 0x4B, 0x01); // Soft reset
+  WriteByte(Addr_Mag, 0x4C, 0x00); // Mag register, Normal Mode, ODR = 10 Hz
+  WriteByte(Addr_Mag, 0x4E, 0x84); // Mag register, X, Y, Z-Axis enabled
+  WriteByte(Addr_Mag, 0x51, 0x04); // Mag register, No. of Repetitions for X-Y Axis = 9
+  WriteByte(Addr_Mag, 0x52, 0x10); // Mag register, No. of Repetitions for Z-Axis = 16
+}
+
+bool WriteByte(int address, byte subAddress, byte data) {
+  Wire.beginTransmission(address);
+  Wire.write(subAddress);
+  Wire.write(data);
+  if (!Wire.endTransmission()){
+    return false;
+  }
+  return true;
+  delay(100); // Short delay after each write
 }
 
 
-void BMX055_All() //BMX055から全データとMadgwickフィルタの結果を取得する
-{
-  unsigned int data[8];
 
-  //加速度データを取得する
-  for (int i = 0; i < 6; i++)
-  {
-    Wire.beginTransmission(Addr_Accl);
-    Wire.write((2 + i));// Select data register
-    Wire.endTransmission();
-    Wire.requestFrom(Addr_Accl, 1);// Request 1 byte of data
-    // Read 6 bytes of data
-    // ax lsb, ax msb, ay lsb, ay msb, az lsb, az msb
-    if (Wire.available() == 1)
-      data[i] = Wire.read();
-  }
-  // Convert the data to 12-bits
-  ax = ((data[1] * 256) + (data[0] & 0xF0)) / 16;
-  if (ax > 2047)  ax -= 4096;
-  ay = ((data[3] * 256) + (data[2] & 0xF0)) / 16;
-  if (ay > 2047)  ay -= 4096;
-  az = ((data[5] * 256) + (data[4] & 0xF0)) / 16;
-  if (az > 2047)  az -= 4096;
-  ax = ax * 0.00098; // range = +/-2g
-  ay = ay * 0.00098; // range = +/-2g
-  az = az * 0.00098; // range = +/-2g
-
-
-  //ジャイロデータを取得する
-  for (int i = 0; i < 6; i++)
-  {
-    Wire.beginTransmission(Addr_Gyro);
-    Wire.write((2 + i));    // Select data register
-    Wire.endTransmission();
-    Wire.requestFrom(Addr_Gyro, 1);    // Request 1 byte of data
-    if (Wire.available() == 1)
-      data[i] = Wire.read();
-  }
-  // Convert the data
-  gx = (data[1] * 256) + data[0];
-  if (gx > 32767)  gx -= 65536;
-  gy = (data[3] * 256) + data[2];
-  if (gy > 32767)  gy -= 65536;
-  gz = (data[5] * 256) + data[4];
-  if (gz > 32767)  gz -= 65536;
-
-  gx = gx * 0.0038; //  Full scale = +/- 125 degree/s
-  gy = gy * 0.0038; //  Full scale = +/- 125 degree/s
-  gz = gz * 0.0038; //  Full scale = +/- 125 degree/s
-
-  //コンパスデータを取得する
-  for (int i = 0; i < 8; i++)
-  {
-    Wire.beginTransmission(Addr_Mag);
-    Wire.write((0x42 + i));    // Select data register
-    Wire.endTransmission();
-    Wire.requestFrom(Addr_Mag, 1);    // Request 1 byte of data
-    // Read 6 bytes of data
-    // mx lsb, mx msb, my lsb, my msb, mz lsb, mz msb
-    if (Wire.available() == 1)
-      data[i] = Wire.read();
-  }
-  // Convert the data
-  mx = ((data[1] << 5) | (data[0] >> 3));
-  if (mx > 4095)  mx -= 8192;
-  my = ((data[3] << 5) | (data[2] >> 3));
-  if (my > 4095)  my -= 8192;
-  mz = ((data[5] << 7) | (data[4] >> 1));
-  if (mz > 16383)  mz -= 32768;
-
-  MadgwickFilter.update(gx, gy, gz, ax, ay, az, mx, my, mz);
-  float pitch = MadgwickFilter.getPitch();
-  float roll  = MadgwickFilter.getRoll();
-  float yaw   = MadgwickFilter.getYaw();
-  Serial.print(pitch);
-  Serial.print(",");
-  Serial.print(roll);
-  Serial.print(",");
-  Serial.print(yaw);
-  Serial.println("");
-}
-
-void VL53L0X_Init(){
+bool VL53L0X_Init(){
   //VL53L0X 初期化
   // まず全てのGPIOをLOW
   for (int i = 0; i < SENSOR_NUM; i++)
@@ -238,9 +123,79 @@ void VL53L0X_Init(){
       Serial.print("Sensor ");
       Serial.print(i);
       Serial.println(" error");
+      return false;
+    }
+  }
+  return true;
+}
+
+
+
+
+unsigned int data[8];
+
+
+//BMX055から全データとMadgwickフィルタの結果を取得する
+void BMX055_All() {
+  // Read accelerometer data
+  readSensorData(Addr_Accl, 0x02, 6);
+  ax = convertAccelData(data[1], data[0]);
+  ay = convertAccelData(data[3], data[2]);
+  az = convertAccelData(data[5], data[4]);
+
+  // Read gyro data
+  readSensorData(Addr_Gyro, 0x02, 6);
+  gx = convertGyroData(data[1], data[0]);
+  gy = convertGyroData(data[3], data[2]);
+  gz = convertGyroData(data[5], data[4]);
+
+  readSensorData(Addr_Mag, 0x42, 8);
+  // Convert the data
+  mx = ((data[1] << 5) | (data[0] >> 3));
+  if (mx > 4095)  mx -= 8192;
+  my = ((data[3] << 5) | (data[2] >> 3));
+  if (my > 4095)  my -= 8192;
+  mz = ((data[5] << 7) | (data[4] >> 1));
+  if (mz > 16383)  mz -= 32768;
+
+  MadgwickFilter.update(gx, gy, gz, ax, ay, az, mx, my, mz);
+  float pitch = MadgwickFilter.getPitch();
+  float roll  = MadgwickFilter.getRoll();
+  float yaw   = MadgwickFilter.getYaw();
+  Serial.print(pitch);
+  Serial.print(",");
+  Serial.print(roll);
+  Serial.print(",");
+  Serial.print(yaw);
+  Serial.println("");
+}
+
+void readSensorData(int address, byte startReg, int numBytes) {
+  Wire.beginTransmission(address);
+  Wire.write(startReg); // Select start register
+  Wire.endTransmission();
+  
+  Wire.requestFrom(address, numBytes);
+  for (int i = 0; i < numBytes; i++) {
+    if (Wire.available()) {
+      data[i] = Wire.read(); // Read data bytes
     }
   }
 }
+
+float convertAccelData(byte msb, byte lsb) {
+  int raw = (msb << 8) | lsb;
+  if (raw > 2047) raw -= 4096; // Convert to signed 12-bit
+  return raw * 0.00098; // Convert to gravity units (+/-2g)
+}
+
+float convertGyroData(byte msb, byte lsb) {
+  int raw = (msb << 8) | lsb;
+  if (raw > 32767) raw -= 65536; // Convert to signed 16-bit
+  return raw * 0.0038; // Convert to degrees per second (+/-125°/s)
+}
+
+
 
 void VL53L0X_Get(){
   //VL53L0X 距離の読み取り
@@ -263,11 +218,14 @@ void setup()
   Serial.begin(115200);
 
 
-  //BMX055を初期化
-  BMX055_Init();
+  //BMX055 初期化
+  if(!BMX055_Init()){
+    Serial.println("BMX055 initialization failed!");
+  }
 
-  //VL53L0Xを初期化
-  VL53L0X_Init();
+  if(!VL53L0X_Init()){
+    Serial.println("VL53L0X initialization failed!");
+  }
 
   VL53L0Xticker.start();
   madgwickticker.start();
