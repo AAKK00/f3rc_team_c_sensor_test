@@ -1,43 +1,17 @@
 #include <Wire.h>
-#include <MadgwickAHRS.h>
 #include <VL53L0X.h>
-
-Madgwick MadgwickFilter;
-#define MadgwickHz 100 //周波数。１秒間に何回データを読み込むかの値
-
 #include <Ticker.h>
+#include <Adafruit_BNO055.h>
+
+
 //tickerの書き方のメモですが括弧内で関数、何秒でそれを実行するか、何回繰り返すかを宣言してください
 //以下が基本の形です
 //Ticker hoge(hogehoge, 0) 関数hogehogeを0usで実行する
-void BMX055_All();
-Ticker madgwickticker(BMX055_All, 0);
-
 void VL53L0X_Get();
-Ticker VL53L0Xticker(VL53L0X_Get, 0); 
+//Ticker VL53L0Xticker(VL53L0X_Get, 0); 
 
-
-
-// BMX055 加速度センサのI2Cアドレス  
-#define Addr_Accl 0x19  // (JP1,JP2,JP3 = Openの時)
-// BMX055 ジャイロセンサのI2Cアドレス
-#define Addr_Gyro 0x69  // (JP1,JP2,JP3 = Openの時)
-// BMX055 磁気センサのI2Cアドレス
-#define Addr_Mag 0x13   // (JP1,JP2,JP3 = Openの時)
-
-
-// センサーの値を保存するグローバル変数
-float ax = 0.00;
-float ay = 0.00;
-float az = 0.00;
-float gx = 0.00;
-float gy = 0.00;
-float gz = 0.00;
-int mx = 0.00;
-int my = 0.00;
-int mz = 0.00;
-float pitch = 0.00;
-float roll = 0.00;
-float yaw = 0.00;
+//Adafruit_BNO055 bno = Adafruit_BNO055(55, 0x28, &Wire); //ICSの名前, デフォルトアドレス, 謎
+Adafruit_BNO055 bno = Adafruit_BNO055(55, 0x28);
 
 
 // 使用するセンサーの数
@@ -56,46 +30,6 @@ float yaw = 0.00;
 */
 const int GPIO_MASK_ARRAY[SENSOR_NUM] = {SENSOR0, SENSOR1, SENSOR2, SENSOR3};
 VL53L0X gSensor[SENSOR_NUM]; // 使用するセンサークラス配列
-
-
-
-bool BMX055_Init() {
-  InitAccel();
-  InitGyro();
-  InitMag();
-}
-
-bool InitAccel() {
-  WriteByte(Addr_Accl, 0x0F, 0x03); // PMU_Range register, Range = +/- 2g
-  WriteByte(Addr_Accl, 0x10, 0x08); // PMU_BW register, Bandwidth = 7.81 Hz
-  WriteByte(Addr_Accl, 0x11, 0x00); // PMU_LPW register, Normal mode
-}
-
-bool InitGyro() {
-  WriteByte(Addr_Gyro, 0x0F, 0x04); // Range register, Full scale = +/- 125 degree/s
-  WriteByte(Addr_Gyro, 0x10, 0x07); // Bandwidth register, ODR = 100 Hz
-  WriteByte(Addr_Gyro, 0x11, 0x00); // LPM1 register, Normal mode
-}
-
-bool InitMag() {
-  WriteByte(Addr_Mag, 0x4B, 0x83); // Soft reset
-  WriteByte(Addr_Mag, 0x4B, 0x01); // Soft reset
-  WriteByte(Addr_Mag, 0x4C, 0x00); // Mag register, Normal Mode, ODR = 10 Hz
-  WriteByte(Addr_Mag, 0x4E, 0x84); // Mag register, X, Y, Z-Axis enabled
-  WriteByte(Addr_Mag, 0x51, 0x04); // Mag register, No. of Repetitions for X-Y Axis = 9
-  WriteByte(Addr_Mag, 0x52, 0x10); // Mag register, No. of Repetitions for Z-Axis = 16
-}
-
-bool WriteByte(int address, byte subAddress, byte data) {
-  Wire.beginTransmission(address);
-  Wire.write(subAddress);
-  Wire.write(data);
-  if (!Wire.endTransmission()){
-    return false;
-  }
-  return true;
-  delay(100); // Short delay after each write
-}
 
 
 
@@ -130,73 +64,6 @@ bool VL53L0X_Init(){
 }
 
 
-
-
-unsigned int data[8];
-
-
-//BMX055から全データとMadgwickフィルタの結果を取得する
-void BMX055_All() {
-  // Read accelerometer data
-  readSensorData(Addr_Accl, 0x02, 6);
-  ax = convertAccelData(data[1], data[0]);
-  ay = convertAccelData(data[3], data[2]);
-  az = convertAccelData(data[5], data[4]);
-
-  // Read gyro data
-  readSensorData(Addr_Gyro, 0x02, 6);
-  gx = convertGyroData(data[1], data[0]);
-  gy = convertGyroData(data[3], data[2]);
-  gz = convertGyroData(data[5], data[4]);
-
-  readSensorData(Addr_Mag, 0x42, 8);
-  // Convert the data
-  mx = ((data[1] << 5) | (data[0] >> 3));
-  if (mx > 4095)  mx -= 8192;
-  my = ((data[3] << 5) | (data[2] >> 3));
-  if (my > 4095)  my -= 8192;
-  mz = ((data[5] << 7) | (data[4] >> 1));
-  if (mz > 16383)  mz -= 32768;
-
-  MadgwickFilter.update(gx, gy, gz, ax, ay, az, mx, my, mz);
-  float pitch = MadgwickFilter.getPitch();
-  float roll  = MadgwickFilter.getRoll();
-  float yaw   = MadgwickFilter.getYaw();
-  Serial.print(pitch);
-  Serial.print(",");
-  Serial.print(roll);
-  Serial.print(",");
-  Serial.print(yaw);
-  Serial.println("");
-}
-
-void readSensorData(int address, byte startReg, int numBytes) {
-  Wire.beginTransmission(address);
-  Wire.write(startReg); // Select start register
-  Wire.endTransmission();
-  
-  Wire.requestFrom(address, numBytes);
-  for (int i = 0; i < numBytes; i++) {
-    if (Wire.available()) {
-      data[i] = Wire.read(); // Read data bytes
-    }
-  }
-}
-
-float convertAccelData(byte msb, byte lsb) {
-  int raw = (msb << 8) | lsb;
-  if (raw > 2047) raw -= 4096; // Convert to signed 12-bit
-  return raw * 0.00098; // Convert to gravity units (+/-2g)
-}
-
-float convertGyroData(byte msb, byte lsb) {
-  int raw = (msb << 8) | lsb;
-  if (raw > 32767) raw -= 65536; // Convert to signed 16-bit
-  return raw * 0.0038; // Convert to degrees per second (+/-125°/s)
-}
-
-
-
 void VL53L0X_Get(){
   //VL53L0X 距離の読み取り
   for (int i = 0; i < SENSOR_NUM; i++) {
@@ -208,32 +75,78 @@ void VL53L0X_Get(){
 }
 
 
+void quat_to_euler(double w, double x, double y, double z){
+  double roll, pitch, yaw;
+  double ysqr = y * y;
+
+  // roll (x-axis rotation)
+  double t0 = +2.0 * (w * x + y * z);
+  double t1 = +1.0 - 2.0 * (x * x + ysqr);
+  roll = atan2(t0, t1);
+
+  // pitch (y-axis rotation)
+  double t2 = +2.0 * (w * y - z * x);
+  t2 = t2 > 1.0 ? 1.0 : t2;
+  t2 = t2 < -1.0 ? -1.0 : t2;
+  pitch = asin(t2);
+
+  // yaw (z-axis rotation)
+  double t3 = +2.0 * (w * z + x * y);
+  double t4 = +1.0 - 2.0 * (ysqr + z * z);  
+  yaw = atan2(t3, t4);
+
+  // 180 / PI
+  roll *= 57.2957795131;
+  pitch *= 57.2957795131;
+  yaw *= 57.2957795131;
+
+  Serial.print("roll:");
+  Serial.print(roll, 7);
+  Serial.print(" pitch:");
+  Serial.print(pitch, 7);
+  Serial.print(" Yaw:");
+  Serial.println(yaw, 7);
+}
+
+
+
 void setup()
 {
-  MadgwickFilter.begin(MadgwickHz);
 
   // Wire(Arduino-I2C)の初期化
   Wire.begin();
-  // デバッグ用シリアル通信は115200bps
-  Serial.begin(115200);
+  
 
-
-  //BMX055 初期化
-  if(!BMX055_Init()){
-    Serial.println("BMX055 initialization failed!");
+  if(!bno.begin()) {
+    Serial.println("Cannot start BNO055!");
   }
+  bno.setExtCrystalUse(false);
+  
+  // デバッグ用シリアル通信は9600bps
+  Serial.begin(9600);
 
+
+
+
+/*
   if(!VL53L0X_Init()){
     Serial.println("VL53L0X initialization failed!");
   }
 
   VL53L0Xticker.start();
-  madgwickticker.start();
+  */
+  //madgwickticker.start();
+  //madgwickticker.attach_ms(100, BMX055_All);
 }
 
 
 void loop()
 {
-  VL53L0Xticker.update();
-  madgwickticker.update();
+
+  imu::Quaternion quat = bno.getQuat();
+  quat_to_euler(quat.w(), quat.x(), quat.y(), quat.z());
+
+  delay(100);
+  //VL53L0Xticker.update();
+  //madgwickticker.update();
 }
