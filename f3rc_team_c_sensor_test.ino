@@ -115,7 +115,6 @@ void setup()
 
   // Wire(Arduino-I2C)の初期化
   Wire.begin();
-  
 
   if(!bno.begin()) {
     Serial.println("Cannot start BNO055!");
@@ -125,18 +124,13 @@ void setup()
   // デバッグ用シリアル通信は9600bps
   Serial.begin(9600);
 
-
-
-
 /*
   if(!VL53L0X_Init()){
     Serial.println("VL53L0X initialization failed!");
   }
 
   VL53L0Xticker.start();
-  */
-  //madgwickticker.start();
-  //madgwickticker.attach_ms(100, BMX055_All);
+*/
 }
 
 
@@ -148,5 +142,4 @@ void loop()
 
   delay(100);
   //VL53L0Xticker.update();
-  //madgwickticker.update();
 }
