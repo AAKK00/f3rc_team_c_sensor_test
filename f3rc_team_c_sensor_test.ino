@@ -120,17 +120,13 @@ void setup()
     Serial.println("Cannot start BNO055!");
   }
   bno.setExtCrystalUse(false);
-  
-  // デバッグ用シリアル通信は9600bps
-  Serial.begin(9600);
 
-/*
   if(!VL53L0X_Init()){
     Serial.println("VL53L0X initialization failed!");
   }
-
-  VL53L0Xticker.start();
-*/
+  
+  // デバッグ用シリアル通信は9600bps
+  Serial.begin(9600);
 }
 
 
@@ -139,7 +135,7 @@ void loop()
 
   imu::Quaternion quat = bno.getQuat();
   quat_to_euler(quat.w(), quat.x(), quat.y(), quat.z());
+  VL53L0X_Get();
 
   delay(100);
-  //VL53L0Xticker.update();
 }
