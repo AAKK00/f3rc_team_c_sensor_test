@@ -141,6 +141,10 @@ void quat_to_euler(Angles *p, double w, double x, double y, double z) {
   */
 }
 
+void getlocation(){
+  //あまりよく考えずに関数を増やしたくないので内容はちょっと考える
+}
+
 
 void setup()
 {
@@ -197,7 +201,7 @@ void loop()
 
   // 加速度センサ値の取得と表示
   imu::Vector<3> accelermetor = bno.getVector(Adafruit_BNO055::VECTOR_ACCELEROMETER);
-  Serial.print(" 　Ac_xyz:");
+  Serial.print("Ac_xyz:");
   Serial.print(accelermetor.x());
   Serial.print(", ");
   Serial.print(accelermetor.y());
@@ -213,6 +217,7 @@ void loop()
       raw_accel[i] = a[i][j] * raw_accel[j];
     }
   }
+
 
 
   Serial.print(rpy.roll);
